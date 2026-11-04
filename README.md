@@ -1,1 +1,1 @@
-# tallinding-islamic-institute
+# Tallinding-Islamic-Institute
