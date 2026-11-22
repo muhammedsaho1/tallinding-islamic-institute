@@ -507,19 +507,60 @@ async function getResults(req) {
 async function studentLogin(req) {
   if (req.method !== 'POST') return err('Method not allowed', 405);
   try {
-    const { studentId, password } = await req.json();
-    if (!studentId || !password) {
+    const { studentId, password, pin, fullName } = await req.json();
+    const secret = String(pin || password || '').trim();
+    if (!studentId || !secret) {
       return err('يرجى إدخال رقم الطالب وكلمة المرور', 400);
     }
 
-    const [student] = await sql`
-      SELECT student_id, full_name, grade_level, class_name, date_of_birth,
-             guardian_name, guardian_phone, student_phone, address, profile_photo
-      FROM students
-      WHERE UPPER(student_id) = UPPER(${studentId}) AND password = ${password}
-    `;
+    try { await ensurePinSchema(); } catch (e) { console.error('PIN schema error:', e); }
+
+    let student;
+    try {
+      [student] = await sql`
+        SELECT student_id, full_name, grade_level, class_name, date_of_birth,
+               guardian_name, guardian_phone, student_phone, address, profile_photo,
+               password, portal_pin
+        FROM students
+        WHERE UPPER(student_id) = UPPER(${studentId})
+      `;
+    } catch (e) {
+      // PIN column not available: behave exactly like the old login
+      [student] = await sql`
+        SELECT student_id, full_name, grade_level, class_name, date_of_birth,
+               guardian_name, guardian_phone, student_phone, address, profile_photo,
+               password, NULL AS portal_pin
+        FROM students
+        WHERE UPPER(student_id) = UPPER(${studentId})
+      `;
+    }
 
     if (!student) {
+      return err('رقم الطالب أو كلمة المرور غير صحيحة', 401);
+    }
+
+    if (student.portal_pin) {
+      // ---- PIN login: full name + student number + PIN ----
+      const bucket = 'pin:' + String(student.student_id).toUpperCase();
+      const [cnt] = await sql`
+        SELECT COUNT(*)::int AS n FROM pin_login_attempts
+        WHERE bucket = ${bucket} AND created_at > NOW() - INTERVAL '15 minutes'
+      `;
+      if (cnt && cnt.n >= 8) {
+        return err('محاولات كثيرة. حاول مرة أخرى بعد 15 دقيقة.', 429);
+      }
+      if (!fullName || !String(fullName).trim()) {
+        return err('اكتب اسمك الكامل مع رقم الطالب ورقم PIN', 400);
+      }
+      const good = String(student.portal_pin) === secret && nameMatches(fullName, student.full_name);
+      if (!good) {
+        await sql`INSERT INTO pin_login_attempts (bucket) VALUES (${bucket})`;
+        await sql`DELETE FROM pin_login_attempts WHERE created_at < NOW() - INTERVAL '1 day'`;
+        return err('الاسم أو رقم الطالب أو رقم PIN غير صحيح', 401);
+      }
+      await sql`DELETE FROM pin_login_attempts WHERE bucket = ${bucket}`;
+    } else if (String(student.password) !== String(password || pin || '').trim()) {
+      // ---- students without a PIN keep the old password login ----
       return err('رقم الطالب أو كلمة المرور غير صحيحة', 401);
     }
 
@@ -701,6 +742,137 @@ async function uploadPhoto(req) {
 }
 
 // ---------------------------------------------------------------------------
+// Student portal PINs (random 6-digit PIN per student, printed on slips)
+// ---------------------------------------------------------------------------
+let _pinReady = false;
+async function ensurePinSchema() {
+  if (_pinReady) return;
+  await sql`ALTER TABLE students ADD COLUMN IF NOT EXISTS portal_pin TEXT`;
+  await sql`CREATE UNIQUE INDEX IF NOT EXISTS students_portal_pin_uq ON students (portal_pin) WHERE portal_pin IS NOT NULL`;
+  await sql`CREATE TABLE IF NOT EXISTS pin_login_attempts (
+    id SERIAL PRIMARY KEY,
+    bucket TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  )`;
+  _pinReady = true;
+}
+
+// Arabic-tolerant name comparison (ignores diacritics, hamza/alef forms, ta marbuta, extra spaces)
+function normName(s) {
+  return String(s || '')
+    .replace(/[\u064B-\u065F\u0670\u0640]/g, '')
+    .replace(/[أإآٱ]/g, 'ا')
+    .replace(/ة/g, 'ه')
+    .replace(/ى/g, 'ي')
+    .replace(/ؤ/g, 'و')
+    .replace(/ئ/g, 'ي')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+}
+function nameMatches(typed, full) {
+  const t = normName(typed), f = normName(full);
+  if (!t || !f) return false;
+  if (t === f || t.replace(/ /g, '') === f.replace(/ /g, '')) return true;
+  // at least two words, and they must be the beginning of the registered name
+  return t.split(' ').length >= 2 && (f + ' ').startsWith(t + ' ');
+}
+
+function randomPin() {
+  const a = new Uint32Array(1);
+  globalThis.crypto.getRandomValues(a);
+  return String(100000 + (a[0] % 900000));
+}
+
+async function checkAdmin(body) {
+  const u = body && body.adminUser, p = body && body.adminPass;
+  if (!u || !p) return false;
+  const r = await sql`SELECT id FROM admin WHERE username = ${u} AND password = ${p}`;
+  return r.length > 0;
+}
+
+async function generatePins(req) {
+  if (req.method !== 'POST') return err('Method not allowed', 405);
+  try {
+    const body = await req.json();
+    if (!(await checkAdmin(body))) return err('غير مصرح. سجّل الدخول من جديد.', 401);
+    await ensurePinSchema();
+
+    const grade = parseInt(body.gradeLevel);
+    if (isNaN(grade)) return err('اختر الصف', 400);
+    const cls = body.className ? String(body.className).trim() : '';
+    const regenerate = body.regenerate === true;
+
+    const rows = cls
+      ? await sql`SELECT student_id, portal_pin FROM students
+                  WHERE grade_level = ${grade} AND class_name = ${cls} AND archived_at IS NULL`
+      : await sql`SELECT student_id, portal_pin FROM students
+                  WHERE grade_level = ${grade} AND archived_at IS NULL`;
+
+    const usedRows = await sql`SELECT portal_pin FROM students WHERE portal_pin IS NOT NULL`;
+    const used = new Set(usedRows.map(r => r.portal_pin));
+
+    const ids = [], pins = [];
+    for (const r of rows) {
+      if (r.portal_pin && !regenerate) continue;
+      if (r.portal_pin) used.delete(r.portal_pin);
+      let pin;
+      do { pin = randomPin(); } while (used.has(pin));
+      used.add(pin);
+      ids.push(r.student_id);
+      pins.push(pin);
+    }
+
+    if (ids.length) {
+      await sql`
+        UPDATE students s SET portal_pin = v.pin
+        FROM (SELECT unnest(${ids}::text[]) AS id, unnest(${pins}::text[]) AS pin) v
+        WHERE s.student_id = v.id
+      `;
+    }
+    return ok({ success: true, generated: ids.length, total: rows.length });
+  } catch (error) {
+    console.error('Generate PINs error:', error);
+    return err(error.message || 'Server error', 500);
+  }
+}
+
+async function getPinSlips(req) {
+  if (req.method !== 'POST') return err('Method not allowed', 405);
+  try {
+    const body = await req.json();
+    if (!(await checkAdmin(body))) return err('غير مصرح. سجّل الدخول من جديد.', 401);
+    await ensurePinSchema();
+
+    const grade = parseInt(body.gradeLevel);
+    if (isNaN(grade)) return err('اختر الصف', 400);
+    const cls = body.className ? String(body.className).trim() : '';
+
+    const rows = cls
+      ? await sql`SELECT student_id, full_name, grade_level, class_name, portal_pin FROM students
+                  WHERE grade_level = ${grade} AND class_name = ${cls} AND archived_at IS NULL
+                  ORDER BY class_name, full_name`
+      : await sql`SELECT student_id, full_name, grade_level, class_name, portal_pin FROM students
+                  WHERE grade_level = ${grade} AND archived_at IS NULL
+                  ORDER BY class_name, full_name`;
+
+    return ok({
+      success: true,
+      students: rows.map(r => ({
+        studentId: r.student_id,
+        fullName: r.full_name,
+        gradeLevel: r.grade_level,
+        className: r.class_name,
+        pin: r.portal_pin || null
+      }))
+    });
+  } catch (error) {
+    console.error('Get PIN slips error:', error);
+    return err(error.message || 'Server error', 500);
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Router — one edge function, dispatched by the last path segment
 // ---------------------------------------------------------------------------
 
@@ -734,6 +906,8 @@ const routes = {
   'get-class-stats': getClassStats,
   'get-results': getResults,
   'student-login': studentLogin,
+  'generate-pins': generatePins,
+  'get-pin-slips': getPinSlips,
   'reset-password': resetPassword,
   'update-student': updateStudent,
   'upload-photo': uploadPhoto
@@ -769,6 +943,8 @@ export const config = {
     '/api/get-class-stats',
     '/api/get-results',
     '/api/student-login',
+    '/api/generate-pins',
+    '/api/get-pin-slips',
     '/api/reset-password',
     '/api/update-student',
     '/api/upload-photo'
