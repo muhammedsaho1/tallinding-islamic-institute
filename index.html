@@ -1289,8 +1289,9 @@ input[type="number"]::-webkit-outer-spin-button, input[type="number"]::-webkit-i
                             <h3>بوابة الطالب</h3>
                             <p>سجّل دخولك لتتابع نتائجك وسجلّك الدراسي لكل عام.</p>
                             <div class="login-form">
+                                <div class="lf-field"><i class="fas fa-user lf-ico"></i><input type="text" id="student-name-input" placeholder="الاسم الكامل (كما في بطاقة الدخول)" autocomplete="name" spellcheck="false" style="direction:rtl;text-align:right;"></div>
                                 <div class="lf-field"><i class="fas fa-id-card lf-ico"></i><input type="text" id="student-id-input" placeholder="رقم الطالب" autocomplete="username" autocapitalize="characters" spellcheck="false" style="direction:ltr;text-align:left;"></div>
-                                <div class="lf-field"><i class="fas fa-lock lf-ico"></i><input type="password" id="student-pass-input" placeholder="كلمة المرور" autocomplete="current-password" style="direction:ltr;text-align:left;"><button type="button" class="lf-eye" onclick="var i=document.getElementById('student-pass-input');var s=i.type==='password';i.type=s?'text':'password';this.innerHTML=s?'<i class=\'fas fa-eye-slash\'></i>':'<i class=\'fas fa-eye\'></i>';" aria-label="إظهار كلمة المرور"><i class="fas fa-eye"></i></button></div>
+                                <div class="lf-field"><i class="fas fa-lock lf-ico"></i><input type="password" id="student-pass-input" placeholder="رقم PIN / كلمة المرور" autocomplete="current-password" style="direction:ltr;text-align:left;"><button type="button" class="lf-eye" onclick="var i=document.getElementById('student-pass-input');var s=i.type==='password';i.type=s?'text':'password';this.innerHTML=s?'<i class=\'fas fa-eye-slash\'></i>':'<i class=\'fas fa-eye\'></i>';" aria-label="إظهار كلمة المرور"><i class="fas fa-eye"></i></button></div>
                                 <button id="studentLoginBtn" class="lf-submit" onclick="studentLogin()"><i class="fas fa-sign-in-alt"></i><span>تسجيل الدخول</span></button>
                             </div>
                             <div class="login-error" id="student-login-error"></div>
@@ -1427,13 +1428,15 @@ input[type="number"]::-webkit-outer-spin-button, input[type="number"]::-webkit-i
 async function studentLogin() {
     const studentId = document.getElementById('student-id-input').value.trim();
     const password = document.getElementById('student-pass-input').value.trim();
+    const nameEl = document.getElementById('student-name-input');
+    const fullName = nameEl ? nameEl.value.trim() : '';
     const btn = document.getElementById('studentLoginBtn');
     const errorEl = document.getElementById('student-login-error');
     errorEl.classList.remove('show');
     if (!studentId || !password) { errorEl.textContent = 'يرجى إدخال رقم الطالب وكلمة المرور'; errorEl.classList.add('show'); return; }
     btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> جاري التحقق...';
     try {
-        const res = await fetch('/api/student-login', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({studentId,password}) });
+        const res = await fetch('/api/student-login', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({studentId,password,pin:password,fullName}) });
         const data = await res.json();
         if (data.success) showStudentDashboard(data.student);
         else { errorEl.textContent = data.error || 'بيانات غير صحيحة'; errorEl.classList.add('show'); }
@@ -1773,6 +1776,7 @@ function logout(type) {
     if (type === 'student') {
         document.getElementById('student-id-input').value = '';
         document.getElementById('student-pass-input').value = '';
+        var _n = document.getElementById('student-name-input'); if (_n) _n.value = '';
         setAvatarPhoto('');
         currentStudentData = null;
     }
