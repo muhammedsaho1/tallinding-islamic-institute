@@ -1373,6 +1373,9 @@
 </div>
 
 <script>
+function esc(v){return String(v==null?'':v).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
+</script>
+<script>
     // ===== ADMIN INSTALL =====
 let adminDeferredPrompt = null;
 window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); adminDeferredPrompt = e; });
@@ -1613,7 +1616,7 @@ async function filterStudentsByGradeClass() {
         }
         const filtered = cachedStudents.filter(s => String(s.grade_level) === grade && s.class_name === cls);
         select.innerHTML = filtered.length
-            ? '<option value="">-- اختر الطالب --</option>' + filtered.map(s => `<option value="${s.student_id}">${s.student_id} - ${s.full_name}</option>`).join('')
+            ? '<option value="">-- اختر الطالب --</option>' + filtered.map(s => `<option value="${esc(s.student_id)}">${esc(s.student_id)} - ${esc(s.full_name)}</option>`).join('')
             : '<option value="">لا يوجد طلاب في هذا الفصل</option>';
     } catch { select.innerHTML = '<option value="">خطأ في التحميل</option>'; }
 }
@@ -1699,7 +1702,7 @@ function parseCsvFile(input) {
             if (parts.length < 5) return;
             const [sid, name, pass, grade, cls] = parts;
             csvStudents.push({studentId: sid, fullName: name, password: pass, gradeLevel: parseInt(grade), className: cls});
-            tbody.innerHTML += `<tr id="csv-row-${i}"><td>${i+1}</td><td style="font-weight:700;color:var(--green);">${sid}</td><td>${name}</td><td>${gradeNames(grade)}</td><td>${cls}</td><td><span style="color:#888;font-size:0.82rem;">في الانتظار</span></td></tr>`;
+            tbody.innerHTML += `<tr id="csv-row-${i}"><td>${i+1}</td><td style="font-weight:700;color:var(--green);">${esc(sid)}</td><td>${esc(name)}</td><td>${gradeNames(grade)}</td><td>${esc(cls)}</td><td><span style="color:#888;font-size:0.82rem;">في الانتظار</span></td></tr>`;
         });
         document.getElementById('csv-count').innerHTML = `<i class="fas fa-users"></i> ${csvStudents.length} طالب`;
         document.getElementById('csv-preview').style.display = 'block';
@@ -1719,7 +1722,7 @@ async function bulkAddStudents() {
             const res = await fetch('/api/add-student', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(s)});
             const data = await res.json();
             if (data.success) { success++; if (row) row.cells[5].innerHTML = '<span style="color:#155724;font-weight:700;">✅ تم</span>'; }
-            else { failed++; if (row) row.cells[5].innerHTML = `<span style="color:#c0392b;font-size:0.8rem;">❌ ${data.error}</span>`; }
+            else { failed++; if (row) row.cells[5].innerHTML = `<span style="color:#c0392b;font-size:0.8rem;">❌ ${esc(data.error)}</span>`; }
         } catch { failed++; if (row) row.cells[5].innerHTML = '<span style="color:#c0392b;">❌ خطأ</span>'; }
     }
     cachedStudents = [];
@@ -1787,8 +1790,8 @@ function parseBulkResults(input) {
             rowNum++;
             tbody.innerHTML += `<tr id="br-row-${rowNum}">
                 <td>${rowNum}</td>
-                <td style="font-weight:700;color:var(--green);">${studentId}</td>
-                <td>${subject}</td>
+                <td style="font-weight:700;color:var(--green);">${esc(studentId)}</td>
+                <td>${esc(subject)}</td>
                 <td style="font-weight:700;">${score}</td>
                 <td style="color:#555;">100</td>
                 <td style="color:#555;">50</td>
@@ -1803,7 +1806,7 @@ function parseBulkResults(input) {
         document.getElementById('br-subject-count').innerHTML = `<i class="fas fa-book"></i> ${uniqueSubjects.length} مادة`;
         document.getElementById('br-summary').innerHTML = uniqueStudents.map(sid => {
             const count = bulkResultsData.filter(r => r.studentId === sid).length;
-            return `<div style="background:var(--green-pale);color:var(--green);padding:0.3rem 0.8rem;border-radius:20px;font-size:0.8rem;font-weight:700;">${sid}: ${count} مادة</div>`;
+            return `<div style="background:var(--green-pale);color:var(--green);padding:0.3rem 0.8rem;border-radius:20px;font-size:0.8rem;font-weight:700;">${esc(sid)}: ${count} مادة</div>`;
         }).join('');
         document.getElementById('br-preview').style.display = 'block';
         document.getElementById('br-error').classList.remove('show');
@@ -1840,7 +1843,7 @@ async function uploadBulkResults() {
                 if (rowEl) rowEl.cells[7].innerHTML = '<span style="color:#155724;font-weight:700;">✅ تم</span>';
             } else {
                 failed++;
-                if (rowEl) rowEl.cells[7].innerHTML = `<span style="color:#c0392b;font-size:0.8rem;">❌ ${data.error || 'خطأ'}</span>`;
+                if (rowEl) rowEl.cells[7].innerHTML = `<span style="color:#c0392b;font-size:0.8rem;">❌ ${esc(data.error || 'خطأ')}</span>`;
             }
         } catch {
             failed++;
@@ -1878,7 +1881,7 @@ async function loadAllStudents() {
 function renderStudentsTable(students) {
     const tbody = document.getElementById('allStudentsBody');
     if (!students.length) { tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:2rem;color:#999;">لا يوجد طلاب</td></tr>'; return; }
-    tbody.innerHTML = students.map((s,i) => `<tr><td>${i+1}</td><td style="font-weight:700;color:var(--green);">${s.student_id}</td><td>${s.full_name}</td><td>${gradeNames(String(s.grade_level))}</td><td style="font-weight:700;">${s.class_name||'-'}</td></tr>`).join('');
+    tbody.innerHTML = students.map((s,i) => `<tr><td>${i+1}</td><td style="font-weight:700;color:var(--green);">${esc(s.student_id)}</td><td>${esc(s.full_name)}</td><td>${gradeNames(String(s.grade_level))}</td><td style="font-weight:700;">${esc(s.class_name||'-')}</td></tr>`).join('');
 }
 function filterStudentsTable() {
     const q = document.getElementById('students-search').value.toLowerCase();
@@ -1978,17 +1981,17 @@ function renderResultsTable(results) {
         const gradeBadge = `<span style="padding:0.2rem 0.7rem;border-radius:20px;font-weight:700;font-size:0.82rem;background:${isPass?'#d4edda':'#f8d7da'};color:${isPass?'#155724':'#721c24'};">${isPass?'ناجح ✅':'راسب ❌'}</span>`;
         return `<tr>
             <td>${i+1}</td>
-            <td style="font-weight:700;color:var(--green);">${r.student_id}</td>
-            <td>${r.full_name}</td>
+            <td style="font-weight:700;color:var(--green);">${esc(r.student_id)}</td>
+            <td>${esc(r.full_name)}</td>
             <td>${gradeShort(String(r.grade_level))}</td>
-            <td>${r.class_name||'-'}</td>
-            <td>${r.subject}</td>
+            <td>${esc(r.class_name||'-')}</td>
+            <td>${esc(r.subject)}</td>
             <td style="font-weight:700;">${r.score??'-'}</td>
             <td style="color:#555;">100</td>
             <td style="color:#555;">50</td>
             <td>${gradeBadge}</td>
-            <td>${r.term||'-'}</td>
-            <td>${r.academic_year||'-'}</td>
+            <td>${esc(r.term||'-')}</td>
+            <td>${esc(r.academic_year||'-')}</td>
         </tr>`;
     }).join('');
 }
@@ -2085,7 +2088,7 @@ async function loadTopStudents() {
         }).join('');
         const tbody = document.getElementById('topStudentsBody');
         const rankClass = i => i === 0 ? 'rank-1' : i === 1 ? 'rank-2' : i === 2 ? 'rank-3' : 'rank-other';
-        tbody.innerHTML = ranked.map((s,i) => `<tr><td><span class="top-rank ${rankClass(i)}">${i+1}</span></td><td style="font-weight:700;color:var(--green);">${s.student_id}</td><td>${s.full_name}</td><td>${gradeShort(String(s.grade_level))}</td><td>${s.class_name||'-'}</td><td style="font-weight:800;font-size:1rem;">${s.avg}</td><td>${s.count}</td></tr>`).join('');
+        tbody.innerHTML = ranked.map((s,i) => `<tr><td><span class="top-rank ${rankClass(i)}">${i+1}</span></td><td style="font-weight:700;color:var(--green);">${esc(s.student_id)}</td><td>${esc(s.full_name)}</td><td>${gradeShort(String(s.grade_level))}</td><td>${esc(s.class_name||'-')}</td><td style="font-weight:800;font-size:1rem;">${s.avg}</td><td>${s.count}</td></tr>`).join('');
         document.getElementById('podium-container').style.display = 'block';
     } catch { errorEl.textContent = 'خطأ في الاتصال'; errorEl.classList.add('show'); }
 }
@@ -2152,7 +2155,7 @@ async function loadPromoStudents() {
         const data = await res.json();
         const filtered = data.success ? data.students.filter(s => String(s.grade_level) === grade && s.class_name === cls) : [];
         sel.innerHTML = filtered.length
-            ? '<option value="">-- اختر الطالب --</option>' + filtered.map(s => `<option value="${s.student_id}" data-grade="${s.grade_level}" data-class="${s.class_name}">${s.student_id} - ${s.full_name}</option>`).join('')
+            ? '<option value="">-- اختر الطالب --</option>' + filtered.map(s => `<option value="${esc(s.student_id)}" data-grade="${s.grade_level}" data-class="${esc(s.class_name)}">${esc(s.student_id)} - ${esc(s.full_name)}</option>`).join('')
             : '<option value="">لا يوجد طلاب</option>';
         sel.onchange = updateIndividualPreview;
     } catch { sel.innerHTML = '<option value="">خطأ</option>'; }
@@ -2169,10 +2172,10 @@ function updateIndividualPreview() {
     let toGrade, toClass;
     if (action === 'promote') {
         toGrade = String(parseInt(grade) + 1); toClass = cls;
-        if (toGrade === '13') { document.getElementById('pi-arrow').innerHTML = `<div class="promo-arrow-box"><div class="label">من</div><div class="value">${gradeNames(grade)} - ${cls}</div></div><div class="promo-arrow"><i class="fas fa-graduation-cap" style="color:#f39c12;"></i></div><div class="promo-arrow-box"><div class="label">إلى</div><div class="value gold">🎓 تخريج</div></div>`; document.getElementById('pi-preview').style.display = ''; return; }
+        if (toGrade === '13') { document.getElementById('pi-arrow').innerHTML = `<div class="promo-arrow-box"><div class="label">من</div><div class="value">${gradeNames(grade)} - ${esc(cls)}</div></div><div class="promo-arrow"><i class="fas fa-graduation-cap" style="color:#f39c12;"></i></div><div class="promo-arrow-box"><div class="label">إلى</div><div class="value gold">🎓 تخريج</div></div>`; document.getElementById('pi-preview').style.display = ''; return; }
     } else if (action === 'repeat') { toGrade = grade; toClass = cls; }
     else { toGrade = document.getElementById('pi-new-grade').value || '?'; toClass = document.getElementById('pi-new-class').value || '?'; }
-    document.getElementById('pi-arrow').innerHTML = `<div class="promo-arrow-box"><div class="label">من</div><div class="value">${gradeNames(grade)} - ${cls}</div></div><div class="promo-arrow"><i class="fas fa-arrow-left"></i></div><div class="promo-arrow-box"><div class="label">إلى</div><div class="value">${gradeNames(toGrade)} - ${toClass}</div></div>`;
+    document.getElementById('pi-arrow').innerHTML = `<div class="promo-arrow-box"><div class="label">من</div><div class="value">${gradeNames(grade)} - ${esc(cls)}</div></div><div class="promo-arrow"><i class="fas fa-arrow-left"></i></div><div class="promo-arrow-box"><div class="label">إلى</div><div class="value">${gradeNames(toGrade)} - ${esc(toClass)}</div></div>`;
     document.getElementById('pi-preview').style.display = '';
 }
 
@@ -2216,10 +2219,10 @@ async function loadClassPromoPreview() {
         const res = await fetch('/api/get-all-students');
         const data = await res.json();
         classPromoStudents = data.success ? data.students.filter(s => String(s.grade_level) === grade && s.class_name === cls) : [];
-        document.getElementById('pc-arrow').innerHTML = `<div class="promo-arrow-box"><div class="label">من</div><div class="value">${gradeNames(grade)} - ${cls}</div></div><div class="promo-arrow"><i class="fas fa-arrow-left"></i></div><div class="promo-arrow-box"><div class="label">إلى</div><div class="value">${gradeNames(newGrade)} - ${newClass}</div></div>`;
+        document.getElementById('pc-arrow').innerHTML = `<div class="promo-arrow-box"><div class="label">من</div><div class="value">${gradeNames(grade)} - ${esc(cls)}</div></div><div class="promo-arrow"><i class="fas fa-arrow-left"></i></div><div class="promo-arrow-box"><div class="label">إلى</div><div class="value">${gradeNames(newGrade)} - ${esc(newClass)}</div></div>`;
         document.getElementById('pc-count').innerHTML = `<i class="fas fa-users"></i> ${classPromoStudents.length} طالب`;
         document.getElementById('pc-list').innerHTML = classPromoStudents.map(s =>
-            `<div class="student-promo-item"><input type="checkbox" class="pc-check" value="${s.student_id}" checked><span class="sid">${s.student_id}</span><span>${s.full_name}</span></div>`
+            `<div class="student-promo-item"><input type="checkbox" class="pc-check" value="${esc(s.student_id)}" checked><span class="sid">${esc(s.student_id)}</span><span>${esc(s.full_name)}</span></div>`
         ).join('') || '<p style="color:#999;font-size:0.85rem;padding:0.5rem;">لا يوجد طلاب في هذا الفصل</p>';
         preview.style.display = ''; btn.style.display = classPromoStudents.length ? 'inline-flex' : 'none';
     } catch { }
@@ -2314,7 +2317,7 @@ async function loadGraduatePreview() {
             return count ? `<div style="background:#ffeaea;color:#c0392b;padding:0.3rem 0.8rem;border-radius:20px;font-size:0.82rem;font-weight:700;">الفصل ${c}: ${count}</div>` : '';
         }).join('');
         document.getElementById('grad-list').innerHTML = graduateStudents.map(s =>
-            `<div class="student-promo-item"><input type="checkbox" class="grad-check" value="${s.student_id}" checked><span class="sid">${s.student_id}</span><span>${s.full_name}</span><span class="graduated-badge" style="margin-right:auto;">🎓 متخرج</span></div>`
+            `<div class="student-promo-item"><input type="checkbox" class="grad-check" value="${esc(s.student_id)}" checked><span class="sid">${esc(s.student_id)}</span><span>${esc(s.full_name)}</span><span class="graduated-badge" style="margin-right:auto;">🎓 متخرج</span></div>`
         ).join('') || '<p style="color:#999;font-size:0.85rem;padding:0.5rem;">لا يوجد طلاب في الصف الثاني عشر</p>';
     } catch { }
 }
@@ -2451,15 +2454,15 @@ async function loadGeStudents() {
     const tbody = document.getElementById('ge-tbody');
     tbody.innerHTML = geStudents.map((st, i) => {
         let cells = `<td>${i+1}</td>
-            <td style="font-weight:700;color:var(--green);white-space:nowrap;">${st.student_id}</td>
-            <td style="white-space:nowrap;">${st.full_name}</td>`;
+            <td style="font-weight:700;color:var(--green);white-space:nowrap;">${esc(st.student_id)}</td>
+            <td style="white-space:nowrap;">${esc(st.full_name)}</td>`;
         geSubjectsSelected.forEach((subj, si) => {
             cells += `<td><input type="number" min="0" max="100"
                 id="ge-inp-${i}-${si}"
                 data-row="${i}"
                 data-si="${si}"
-                data-subject="${subj}"
-                data-student="${st.student_id}"
+                data-subject="${esc(subj)}"
+                data-student="${esc(st.student_id)}"
                 oninput="onGeInput(${i}, ${si})"
                 placeholder="—"
                 class="multi-score-input"
